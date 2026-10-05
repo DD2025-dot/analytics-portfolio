@@ -1,0 +1,429 @@
+---
+title: "Creative Gaming"
+author: 
+   - "Deepa Das "      
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+# Preliminaries
+
+### Determine notebook defaults:
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE,      # Print all the code in all the chunks
+                      warning=FALSE,  # Don't print warning statements
+                      message=FALSE,  # Don't print other R output messages
+                      comment=NA)     # Helps produce prettier output
+```
+
+### Load packages:
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+library(Hmisc)
+library(gmodels)
+library(modelr)
+library(janitor)
+library(haven)
+library(readxl)
+library(knitr)
+library(psych)
+library(statar)
+library(tinytex)
+library(tidyverse)
+library(texreg)
+
+library(doMC)
+
+library(caret)
+library(car)
+library(nnet)
+library(ranger)
+library(splitstackshape)
+library(skimr)
+library(kelloggmktg482)
+```
+
+### Read in the data:
+```{r}
+
+load("creative_gaming.Rdata") 
+
+set.seed(3456)
+str(cg_ad_treatment)
+
+```
+```{r}
+#Converting to factor
+cg_ad_treatment <- cg_ad_treatment %>%
+mutate(converted=factor(converted))
+
+str(cg_organic)
+```
+
+
+```{r}
+cg_organic <- cg_organic %>%
+mutate(converted=factor(converted))
+
+str(cg_organic_control)
+```
+
+
+```{r}
+cg_organic_control <- cg_organic_control %>%
+mutate(converted=factor(converted))
+```
+
+
+# Assignment answers
+
+## Part 1: Uplift Modeling Using Machine Learning (Random Forests)
+
+1. Prepare your data:(Hint: Please visualize what you are doing by looking at the new data frames you create in each step)
+a) Create “Group 2” by sampling from cg_ad_treatment. 
+You can use this syntax:
+cg_ad_random <- cg_ad_treatment[sample_random_30000,]
+
+Type your answer text here, intervowen with blocks of R code
+
+```{r}
+cg_ad_random <- cg_ad_treatment[sample_random_30000,]
+
+str(cg_ad_random)
+cg_ad_random %>% skim_without_charts()
+
+```
+
+## Question 2
+
+## b) Create a stacked dataset for the uplift analysis by combining
+## cg_organic_control (Group 1) and cg_ad_random (Group 2).
+
+```{r}
+expdata_stacked <-
+rbind(cg_organic_control %>% mutate(ad = 0),
+cg_ad_random %>% mutate(ad = 1))
+
+expdata_stacked <- expdata_stacked %>%
+mutate(ad=factor(ad))
+
+str(expdata_stacked)
+```
+
+## c) Split the stacked dataset into a training and test dataset. 
+```{r}
+set.seed(1234)
+split.index <- stratified(expdata_stacked, c("ad","converted"), 0.7, bothSets=TRUE)
+expdata_stacked.train <- split.index[[1]]
+expdata_stacked.test <- split.index[[2]]
+
+expdata_stacked.train %>% skim_without_charts()
+
+expdata_stacked.test  %>% skim_without_charts()
+
+ 
+
+
+
+```
+```{r}
+## checking randomization kept proportions even
+
+expdata_stacked %>% tabyl(converted, ad) %>% adorn_percentages("all")
+expdata_stacked.train %>% tabyl(converted, ad) %>% adorn_percentages("all")
+expdata_stacked.test %>% tabyl(converted, ad) %>% adorn_percentages("all")
+
+
+# The results shows the proportion of original data is preserved in test and train data sets also.
+
+```
+
+
+
+## 2. Train an uplift model using random forests. Add the predicted scores for the
+## treatment and control models to expdata_stacked.test uplift score.
+
+```{r}
+
+
+
+library(ranger)
+library(dplyr)
+
+# Step 1: Define the formula
+formula <- as.formula(converted ~ .)
+
+# Step 2: Train random forest models for treatment and control
+rf_treatment <- ranger(formula, data = expdata_stacked.train %>% filter(ad == 1), probability = TRUE,mtry=2, min.node.size=1)
+
+rf_control   <- ranger(formula, data = expdata_stacked.train %>% filter(ad == 0), probability = TRUE,mtry=2, min.node.size=1)
+
+# Step 3: Predict probabilities on the test set
+pred_treat <- predict(rf_treatment, data = expdata_stacked.test)$predictions[, 2]
+pred_control  <- predict(rf_control, data = expdata_stacked.test)$predictions[, 2]
+
+# Step 4: Add predicted scores and uplift score to test data
+expdata_stacked.test <- expdata_stacked.test %>%
+  mutate(
+    pred_treat = pred_treat,
+    pred_control = pred_control,
+    uplift_score = pred_treat - pred_control
+  )
+ summary(expdata_stacked.test)
+```
+
+
+## 3.Calculate the Uplift (%) and Incremental Uplift (%) for the uplift model (use 20
+##instead of the standard 10 groups) and plot performance metrics. Interpret the
+##plots.
+
+```{r}
+# We sort the data on uplift score from highest to lowest and select a few key columns.
+expdata_stacked.test %>%
+arrange(-uplift_score) %>%
+select(converted, ad, pred_treat, pred_control, uplift_score) %>%head()
+```
+
+
+```{r}
+
+PerfTable_uplift <- QiniTable(expdata_stacked.test,
+treat = "ad",
+outcome = "converted",
+prediction = "uplift_score",
+nb.group = 20
+)
+PerfTable_uplift
+
+# Plotting QiniCurve
+
+QiniCurve(PerfTable_uplift)
+
+# Plotting Qini Barplot
+
+QiniBarPlot(PerfTable_uplift)
+
+## Incremental_Y1 denotes T_Y1 - (T_n/C_n)*C_Y1. This is treated conversion minus weighted control conversion
+
+## inc_uplift denotes what percentage of total customers that we treated with ad converted  = (incremental_Y1/4500)
+
+## From the Qinicurve, the equivalent of Gain's curve for uplift model , we infer 
+#that beyond approx. 91% of total cusromers we will start destroying value by targeting do not disturbs and/or sure things
+
+## From the Qinibarplot, we can interpret the uplift percentage.This gives us the difference between treatment and control conversion percentages for each ntile.
+
+## Uplift (%) is calculated by [(T_Y1/T_n)- (C_Y1/C_n)]*100 for each ntile.
+
+## From the Qinibarplot also we can see that the uplift percenatege goes to negative after 91% of Population is targeted.
+
+```
+
+## 4. Using the incremental_Y1 column from the performance metric table created
+##by QiniTable(), calculate the incremental profit you expect to make if you
+##targeted the best 30,000 consumers of 120,000 using the uplift model.
+
+```{r}
+
+# 1. Filter scoring data and align features
+cg_ad_scoring <- cg_ad_treatment[-sample_random_30000, ] 
+
+cg_ad_scoring <- cg_ad_scoring %>%
+  mutate(ad = factor(1, levels = c(0, 1)))
+
+cg_ad_scoring %>% skim_without_charts()
+
+# 3. Predict conversion probability
+pred_treat_adscore <- predict(rf_treatment, data = cg_ad_scoring)$predictions[, 2]
+pred_control_adscore  <- predict(rf_control, data = cg_ad_scoring)$predictions[, 2]
+
+# Step 4: Add predicted scores and uplift score to test data
+cg_ad_scoring <- cg_ad_scoring %>%
+  mutate(
+    pred_treat_adscore = pred_treat_adscore,
+    pred_control_adscore = pred_control_adscore,
+    uplift_score_adscore = pred_treat_adscore - pred_control_adscore
+  )
+
+ 
+ 
+ scaling_factor <- 120000 / 9000
+ 
+# Uplift model profit
+
+
+(filter(PerfTable_uplift, cum_per == 30/120)$incremental_Y1/9*120) -> uplift_incr.pur
+ 
+ ## Because we are targeting the top 30K out of 120K = 30K/120K = 0.25 = 25%
+ 
+ cat("Estimated incremental conversions using Uplift Model (top 30K of 120K):", round(uplift_incr.pur), "\n")
+
+
+cat("Estimated profits using Uplift Model (top 30K of 120K):", round((uplift_incr.pur*14.99)-30000*1.5),"\n")
+
+
+#Estimated incremental conversions using Uplift Model (top 30K of 120K): 6862 
+#Estimated profits using Uplift Model (top 30K of 120K): 57856 
+
+
+ 
+
+```
+
+## 5.Calculate the Uplift (%) and Incremental Uplift (%) you would get if you used a
+##propensity model (use 20 instead of the standard 10 groups). Compare the Uplift
+##(%) performance metric between the uplift and propensity models. Interpret the
+##difference.
+
+```{r}
+PerfTable_propensity <- QiniTable(expdata_stacked.test,
+treat = "ad",
+outcome = "converted",
+prediction = "pred_treat",
+nb.group = 20
+)
+PerfTable_propensity
+
+# next we plot Qini barplot for Propensity model
+QiniBarPlot(PerfTable_propensity)
+
+
+#Compare the multiple models on the same graph. 
+QiniBarPlot(PerfTable_uplift,
+PerfTable_propensity,
+modelnames = c("Uplift Model", "Propensity Model"))
+
+# QiniCurve comparison
+QiniCurve(PerfTable_uplift,
+          PerfTable_propensity,
+          modelnames = c("Uplift Model", "Propensity Model"))
+
+##The propensity model, trained to predict conversion without treatment 
+##information, performs worse than the uplift model. Its Qini curve consistently lies ##below the uplift curve. This confirms that ranking users by treatment effect (uplift) ##rather than conversion likelihood leads to better targeting decisions.
+
+
+```
+##6. Using the incremental_Y1 column from the performance metric table created
+##by QiniTable() for the propensity model, calculate the incremental profit you
+##expect to make if you targeted the best 30,000 consumers of 120,000 using the
+##propensity model. How much more money do you expect to make from using an
+##uplift instead of a propensity model?
+
+```{r}
+profit_per_conversion <- 14.99
+cost_per_targeted <- 1.5
+n_targeted <- 30000
+
+# Top 30K of 120K = 25% of customers; scale test-set incremental conversions (9,000 per group) up to 120,000
+expected_conversions_uplift <- filter(PerfTable_uplift, cum_per == 30/120)$incremental_Y1/9*120
+expected_conversions_propensity <- filter(PerfTable_propensity, cum_per == 30/120)$incremental_Y1/9*120
+
+net_profit_uplift <- expected_conversions_uplift * profit_per_conversion - n_targeted * cost_per_targeted
+net_profit_propensity <- expected_conversions_propensity * profit_per_conversion - n_targeted * cost_per_targeted
+
+profit_gain <- net_profit_uplift - net_profit_propensity
+
+cat("Net Profit (Uplift model): $", round(net_profit_uplift))
+cat("Net Profit (Propensity model): $", round(net_profit_propensity))
+cat("Gain from uplift over propensity: $", round(profit_gain))
+```
+
+## Part 2: Targeting the optimal percent of customers
+
+##So far we have always targeted a 25% of model-selected customers (by picking the
+##best 30,000 out of 120,000 customers). We now want to evaluate whether we should
+##target fewer or more than 25% of customers.
+
+##1. What formula would you use to select which consumers to target using a
+##propensity model where your goal is to maximize profits? What percentage of
+##customers in the ad treatment group of expdata_stacked.test would you
+##target using the propensity model?
+
+```{r}
+## Propensity model: target a customer if the expected profit from the customer
+## (predicted conversion probability x profit per conversion) exceeds the cost of the ad:
+##    pred_treat * 14.99 > 1.5   <=>   pred_treat > 1.5 / 14.99  (about 10%)
+
+breakeven_propensity <- 1.5 / 14.99
+breakeven_propensity
+
+prop_target_pct <- expdata_stacked.test %>%
+  filter(ad == 1) %>%
+  summarise(pct_targeted = mean(pred_treat > breakeven_propensity)) %>%
+  pull(pct_targeted)
+
+prop_target_pct
+round(round(prop_target_pct / 0.05) * 0.05, 2)   # rounded to the nearest 5%
+```
+
+## 2. What formula would you use to select which consumers to target using an uplift
+## model where your goal is to maximize incremental profits. What percentage of
+## customers in the ad treatment group of expdata_stacked.test would you target using the uplift model?
+```{r}
+## Uplift model: target a customer if the expected incremental profit exceeds the ad cost:
+##    uplift_score * 14.99 > 1.5   <=>   uplift_score > 1.5 / 14.99
+## Equivalently, we target customers (ranked by uplift_score) up to the point where
+## cumulative incremental profit = incremental_Y1 * 14.99 - cost of targeting is maximized.
+
+PerfTable_uplift.2 <- QiniTable(expdata_stacked.test,
+                              treat = "ad",
+                              outcome = "converted",
+                              prediction = "uplift_score",
+                              nb.group = 180)
+
+PerfTable_uplift.2 %>%
+  mutate(revenue = incremental_Y1*14.99 - cum_per*9000*1.5) %>%
+  filter(revenue == max(revenue)) %>%
+  mutate(round = round(round(cum_per/0.05) * 0.05, digits = 2)) %>% .$round -> final_cum_per
+
+final_cum_per
+
+(filter(PerfTable_uplift, cum_per == final_cum_per)$incremental_Y1/9*120) -> uplift_incr.pur.2
+uplift_incr.pur.2
+
+(uplift_incr.pur.2*14.99)-(final_cum_per*120000)*1.5
+
+
+##30% of customers from the ad treatment group of expdata_stacked.test
+## are targeted with the uplift model. Estimated incremental profit in this case is about $55,742
+
+
+```
+
+## 3.Rounding the targeting percentage numbers you calculated in 1. and 2. to the
+##nearest 5%, use the QiniTable() you calculated for the propensity and uplift
+##models in Part 1 to calculate the incremental profits you would have obtained in
+##the expdata_stacked.test dataset if you had targeted the optimal
+## percentage of customers suggested by each model.
+```{r}
+## Profit at a given targeting percentage (scaled from the 9,000 per-group test set to 120,000):
+##   incremental profit = incremental_Y1/9*120 * 14.99 - (cum_per * 120000) * 1.5
+
+prop_pct   <- round(round(prop_target_pct / 0.05) * 0.05, 2)   # propensity-model optimum
+uplift_pct <- final_cum_per                                    # uplift-model optimum
+
+profit_at <- function(perf_table, pct) {
+  incr <- filter(perf_table, abs(cum_per - pct) < 1e-6)$incremental_Y1 / 9 * 120
+  incr * 14.99 - pct * 120000 * 1.5
+}
+
+profit_propensity_opt <- profit_at(PerfTable_propensity, prop_pct)
+profit_uplift_opt     <- profit_at(PerfTable_uplift, uplift_pct)
+
+data.frame(
+  model = c("Propensity", "Uplift"),
+  pct_targeted = c(prop_pct, uplift_pct),
+  incremental_profit = round(c(profit_propensity_opt, profit_uplift_opt))
+)
+
+cat("Extra profit from uplift over propensity: $", round(profit_uplift_opt - profit_propensity_opt), "\n")
+```
+
+
+## 4.Give two reasons for why one model beats the other in incremental profits.
+```{r}
+## Uplift models focus on extracting the “Persuadables” segment — consumers who will only convert because of the marketing effort. In contrast, propensity models rank customers based on how likely they are to convert if targeted, which includes “Sure Things” who would buy anyway. As a result, propensity-based targeting often wastes budget on customers who don’t need the nudge, whereas uplift models avoid this and improve spend efficiency
+
+## Second, Uplift models estimate the incremental impact of an ad by comparing the likelihood of purchase with and without the intervention. This isolates the true effect of the campaign. Propensity models, on the other hand, rely on correlation — they can predict who is likely to convert but not why. So, they may wrongly attribute organic conversions to the ad. Because uplift models are based on causal reasoning, it enables smarter targeting and drive more incremental conversions, leading to higher profits
+
+```
+
