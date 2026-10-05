@@ -1,0 +1,460 @@
+---
+title: "Creative Gaming: Propensity Modeling for Ad Targeting"
+author: "Deepa Das"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+# Preliminaries
+
+### Determine notebook defaults:
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE,      # Print all the code in all the chunks
+                      warning=FALSE,  # Don't print warning statements
+                      message=FALSE,  # Don't print other R output messages
+                      comment=NA)     # Helps produce prettier output
+```
+
+### Load packages:
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+library(gmodels)
+library(modelr)
+library(haven)
+library(readxl)
+library(knitr)
+library(psych)
+library(tidyverse)
+library(ranger)
+library(caret)
+library(nnet)
+library(Hmisc)
+library(gmodels)
+library(modelr)
+library(janitor)
+library(dplyr)
+library(readxl)
+library(statar)
+library(tinytex)
+library(texreg)
+library(car)
+library(skimr)
+library(kelloggmktg482)
+```
+
+### Read in the data:
+```{r}
+# use load("../data/filename.Rdata") for .Rdata files
+load("../data/creative_gaming.Rdata")
+
+```
+
+# Assignment answers
+
+## Part1 :What is the probability of organically converting to Zalon?
+##For each feature, show basic summary statistics.
+
+
+```{r}
+## 1. Probability of organically converting to Zalon
+# ---------------------------------------------------
+# The variable is "converted" in the cg_organic dataframe
+prob_conversion <- mean(cg_organic$converted)
+prob_conversion
+
+# 2. Basic summary statistics for each feature
+# ---------------------------------------------------
+# Using skim_without_charts() to display summary statistics
+skim_without_charts(cg_organic)
+prob_conversion
+
+#The probability of organically converting is 5.75% . Summary statistics for each feature is generated below.
+
+
+```
+
+## Part 2: Predictive Model
+##1. Create a training and test sample based on the “cg_organic” dataframe.
+## What is the training/test split percentage?
+
+
+
+```{r}
+## Converting into factors
+cg_organic <- cg_organic %>%
+  mutate(AcquiredSpaceship=factor(AcquiredSpaceship), 
+         AcquiredIonWeapon=factor(AcquiredIonWeapon),
+                 PurchasedCoinPackSmall=factor(PurchasedCoinPackSmall),
+         PurchasedCoinPackLarge=factor(PurchasedCoinPackLarge),
+                 UserNoConsole=factor(UserNoConsole), 
+         UserHasOldOS=factor(UserHasOldOS), 
+         converted=factor(converted))
+
+## Creating a training and test sample based on the “cg_organic” dataframe.
+cg_organic_train <- cg_organic[sample_train_org, ]
+
+# Creating the test sample
+cg_organic_test <- cg_organic[-sample_train_org, ]
+
+# Check how many rows are in each sample
+nrow(cg_organic_train)  
+nrow(cg_organic_test)   
+
+# Calculate the training/testing split percentage
+cg_organic_train_percent <- nrow(cg_organic_train) / nrow(cg_organic) * 100
+cg_organic_test_percent <- nrow(cg_organic_test) / nrow(cg_organic) * 100
+
+cg_organic_train_percent
+cg_organic_test_percent
+
+# Created a training and test data set. The split percentage is 70% to 30%
+
+
+```
+##Train a logistic regression model using all features.
+## a)What are the 5 most important features?
+## b) For each of these 5 feature, make a partial dependence plot and summarize your findings.
+## c) Plot the gains curve in the test sample and report the AUC of the model.
+
+```{r}
+
+
+formula <- as.formula(converted ~ GameLevel + NumGameDays + NumGameDays4Plus +
+                        NumInGameMessagesSent + NumSpaceHeroBadges + NumFriendRequestIgnored +NumFriends + AcquiredSpaceship + AcquiredIonWeapon + TimesLostSpaceship +TimesKilled + TimesCaptain + TimesNavigator + PurchasedCoinPackSmall +PurchasedCoinPackLarge + NumAdsClicked +DaysUser + UserNoConsole + UserHasOldOS)
+
+model_log.0 <- glm(formula,
+               family = "binomial", cg_organic_train)
+summary(model_log.0)
+confint(model_log.0)
+
+```
+
+```{r}
+
+## Variable Importance plots
+varimpplot(model_log.0, target = "converted", data = cg_organic_train)
+
+
+# The top 5 important variables are NumSpaceHeroBadges, NumFriendRequestIgnored,
+#TimesLostSpaceship, GameLevel,NumAdsClicked.
+
+
+
+```
+
+```{r}
+## Partial dependence plots for the 5 most important variables
+
+converted.overall <- mean(cg_organic_train$converted==1)
+pardepplot(model_log.0, pred.var="NumSpaceHeroBadges", data=cg_organic_train, hline=converted.overall)
+
+## The Partial Dependence Plot for NumSpaceHeroBadges shows a strong positive relationship with conversion probability. As players earn more Space Hero Badges, their predicted likelihood of purchasing the Zalon campaign increases significantly. Players with few or no badges are unlikely to convert, while players with many badges (10 or more) are very likely to convert. This suggests that in-game achievement and engagement are highly predictive of purchase behavior.
+
+pardepplot(model_log.0, pred.var="NumFriendRequestIgnored", data=cg_organic_train, hline=converted.overall)
+
+## The Partial Dependence Plot for NumFriendRequestIgnored shows a strong negative relationship with conversion probability. As players ignore more friend requests, 
+## their predicted likelihood of purchasing the Zalon campaign decreases steadily. 
+## This suggests that more socially engaged players (who interact positively with others) are more inclined to purchase upgrades like Zalon.
+
+
+pardepplot(model_log.0, pred.var="TimesLostSpaceship", data=cg_organic_train, hline=converted.overall)
+
+## The Partial Dependence Plot for TimesLostSpaceship shows a sharp negative relationship with conversion probability. Players who have lost few spaceships are significantly more likely to purchase Zalon, while players who have lost many 
+## spaceships have an extremely low probability of converting. This suggests that struggling or less successful players may be less invested in upgrading their 
+## gameplay experience.
+
+pardepplot(model_log.0, pred.var="GameLevel", data=cg_organic_train, hline=converted.overall)
+
+##The Partial Dependence Plot for GameLevel shows a positive relationship with conversion probability. Players at higher levels are more likely to purchase the 
+##Zalon campaign. This suggests that deeper investment and progression within the 
+## game increase players' willingness to spend on upgrades or expansions.
+
+
+
+pardepplot(model_log.0, pred.var="AcquiredSpaceship", data=cg_organic_train, hline=converted.overall)
+
+## The Partial Dependence Plot for AcquiredSpaceship shows a strong relationship 
+## with conversion probability. Players who had previously acquired a spaceship are significantly more likely to purchase the Zalon campaign than those who had not. 
+## This indicates that prior willingness to invest in in-game upgrades is a strong predictor of future purchase behavior.
+
+
+
+
+```
+```{r}
+### Carrying out gains plot analysis
+cg_organic_test<-cg_organic_test %>%
+  mutate(pred_model_log.0 = predict(model_log.0,
+                              newdata = cg_organic_test,
+                              type = "response")) 
+
+cg_organic_train<-cg_organic_train %>%
+  mutate(pred_model_log.0 = predict(model_log.0,
+                              newdata = cg_organic_train,
+                              type = "response")) 
+#Creating gainsplot for training data
+gainsplot(cg_organic_train$pred_model_log.0, label.var = cg_organic_train$converted)
+#Creating gainsplot for test data
+gainsplot(cg_organic_test$pred_model_log.0, label.var = cg_organic_test$converted)
+
+## The AUC for train data set is 0.82
+## The AUC for test data set is 0.803 
+
+```
+
+
+## Part 3: The Ad-Experiment
+```{r}
+## Q1. Calculate the response rate and profit of group 1. 
+
+## converting to factors
+cg_organic_control <- cg_organic_control %>%
+  mutate(AcquiredSpaceship=factor(AcquiredSpaceship), 
+         AcquiredIonWeapon=factor(AcquiredIonWeapon),
+                 PurchasedCoinPackSmall=factor(PurchasedCoinPackSmall),
+         PurchasedCoinPackLarge=factor(PurchasedCoinPackLarge),
+                 UserNoConsole=factor(UserNoConsole), 
+         UserHasOldOS=factor(UserHasOldOS), 
+         converted=factor(converted))
+
+## Calculating response rate and profit of Group 1
+prop.table(table(cg_organic_control$converted)) 
+table(cg_organic_control$converted)
+table(cg_organic_control$converted)[[2]]*14.99 
+
+## 5.68% of the 30000 people in cg_organic_control converted i.e.1706 people out of 30K
+## Total profit is 1706*14.99=25572.94. There is no cost associated, because ads 
+#are not getting served
+
+
+
+```
+
+
+```{r}
+## Q2) Calculate the response rate and profit of group 2. To randomly select 30,000
+## customers, please use the “sample_random_30000” vector to select observations from the 150,000 
+## row dataframe “cg_ad_treatment” which contains the customers who were exposed to the ad campaign. 
+
+cg_ad_random <- cg_ad_treatment[sample_random_30000,]
+prop.table(table(cg_ad_random$converted)) # 0.1304
+table(cg_ad_random$converted)
+table(cg_ad_random$converted)[[2]]*14.99-nrow(cg_ad_random)*1.50
+
+## 13.04% of the 30000 people in cg_ad_random converted i.e.3913 people out of 30K
+## Total profit is 13655.87
+```
+```{r}
+## Q3)Calculate the response rate and profit of group 3. To do this please:
+##(a) Use the logistic regression model you trained in Part 2 to score the 120,000
+##gamers in “cg_ad_treatment” who remained after sampling the 30,000
+## in “cg_ad_random”
+##(b) Select the 30,000 customers with best scores and use only these 30,000
+##(who correspond to group 3) to compute conversion rates and profits of group 3.
+
+
+cg_ad_scoring <- cg_ad_treatment[-sample_random_30000,]
+
+#120,000 players who were exposed to the ad but were not randomly sampled.
+
+cg_ad_scoring <- cg_ad_scoring %>%
+  mutate(pred_model_log.0 = predict(model_log.0,
+                              newdata = cg_ad_scoring,
+                              type = "response")) 
+# we want to score and pick the best 30,000 from this 120,000.
+
+cg_ad_scoring.30k<- cg_ad_scoring %>%
+  top_n(pred_model_log.0, n = 30000) 
+
+prop.table(table(cg_ad_scoring.30k$converted))
+table(cg_ad_scoring.30k$converted)
+table(cg_ad_scoring.30k$converted)[[2]] * 14.99 - nrow(cg_ad_scoring.30k) * 1.50
+
+
+
+## Using the logistic regression model, we selected the top 30,000 players most
+##likely to convert based on predicted probabilities. This model-selected group 
+##achieved a conversion rate of 21.51%, significantly higher than the random ad-exposed group and the organic control group. The corresponding net profit from this group is $51,715.48, demonstrating the effectiveness of model-based targeting.
+```
+```{r}
+# Q4. Answer Mi Haruki’s question: “Please report back to me how well the ads are
+#working in terms of conversion rates and profits and by how much the model
+#improves these metrics, all based on targeting 30,000 customers.”
+
+# # Ads vs control
+(.1304-.0569)/.0569 # 1.29174
+(13655.87-25572.94)/25572.94 # -0.4660031
+
+# Model vs control
+(.2151-.0569)/.0569 # 2.780316
+(51715.48-25572.94)/25572.94 # 1.022274
+
+#We evaluated the effectiveness of the in-app ads and the targeting model by 
+#comparing 3 groups, each consisting of 30,000 players:
+
+#Group 1 (no ad) had a conversion rate of 5.69%, generating a total profit of approximately $25,572.94
+
+#Group 2 (random ad exposure) had a slightly higher conversion rate of 13.04% and generated a profit of approximately $13655.87.
+
+#Group 3 (model-selected top 30,000) had a significantly higher conversion rate of #21.51%, leading to a profit of approximately $51,715.
+
+#Ads present a 129% improvement in conversion rate in relation to the control 
+#group, but because of the cost of serving ads (which for 30K users is $45,000), 
+# they actually perform worst profit-wise (47% decrease in profits). The model, 
+# on the other hand, supposes a 278% increase in conversion, and a 102% increase 
+# in profits.
+```
+
+
+```{r}
+#Q5. Plot the gains curve in the “cg_ad_scoring” sample you scored in Part 3 Q3
+#(which used the model trained in Part 2 Q2). Also report the AUC of the model.
+#Compare the gains curve and AUC to the ones you calculated in Part 2 Q2c.
+#Why are they different?
+
+gainsplot(cg_ad_scoring$pred_model_log.0,
+          label.var=cg_ad_scoring$converted) 
+```
+## The AUC of this model in the new sample is 0.644. The reason for the great decrease in performance is because the model was trained and tested on a different dataset. The model was originally trained on organic player behavior, not on ad-exposed player behavior.
+
+#Player behavior changes when ads are introduced — exposure to ads may make new 
+#types of players convert who wouldn't have done so organically.
+
+##Thus, the model's predictions are slightly less precise on ad-exposed players 
+# compared to purely organic behavior, resulting in a lower AUC and less steep gains curve. dependent variable.
+
+
+```{r}
+#Q6.What is the purpose of group 1 given that we already had data on organic
+#conversions?
+
+```
+## Although we had prior organic conversion data, Group 1 (cg_organic_control) was needed to serve as a recent control group during the experimental period. This allowed us to account for any changes in player behavior over time, such as game updates or seasonal effects. By observing organic conversions at the same time as the ad campaign, we ensured a fair and unbiased comparison, making it possible to accurately measure 
+#the true incremental impact of the ad exposure on conversion rates and profits.
+
+## Part 4: Better Data, Better Predictions
+```{r}
+# Q1. Retrain the logistic regression model from Part 2 (which was trained on
+#“cg_organic_train”) on the sample of customers who were exposed to the ad
+#campaign (“cg_ad_random”). Instead of creating separate training/test datasets,
+#please use the full 30,000 sample “cg_ad_random" you created in Part 3, Q2 to
+#train the model.
+
+model_log.1 <- glm(formula,
+               family = "binomial", cg_ad_random)
+summary(model_log.1)
+confint(model_log.1)
+
+
+```
+
+
+```{r}
+#Q2.Compare the performance of the original “organic” model from Part 2 and this
+#new “ad” model on the “cg_ad_scoring” sample you created in Part 3, Q3. Use
+#gains curves and AUC to make the comparison. What do you find?
+
+cg_ad_scoring %>%
+  mutate(pred_model_log.1 = predict(model_log.1,
+                              newdata = cg_ad_scoring,
+                              type = "response")) -> cg_ad_scoring
+gainsplot(cg_ad_scoring$pred_model_log.0,
+          cg_ad_scoring$pred_model_log.1,
+          label.var=cg_ad_scoring$converted) 
+```
+#The performance of the new model improves considerably, specially in the "lower part of #the curve". This is reflected in the AUC which raises to 0.703.
+
+
+```{r}
+#Q3. Calculate the profit improvement of using the “ad” model instead of the “organic”
+#model to target the best 30,000 customers in the “cg_ad_scoring” sample.
+
+# Helper: profit from targeting the 30,000 highest-scoring customers
+# ($14.99 per conversion, $1.50 per ad served)
+profit_top30k <- function(scores) {
+  top <- cg_ad_scoring[order(-scores)[1:30000], ]
+  sum(top$converted == 1) * 14.99 - 30000 * 1.5
+}
+
+profit_organic_model <- profit_top30k(cg_ad_scoring$pred_model_log.0)
+profit_ad_model      <- profit_top30k(cg_ad_scoring$pred_model_log.1)
+
+data.frame(model = c("Organic model", "Ad model"),
+           profit = round(c(profit_organic_model, profit_ad_model)))
+cat("Profit improvement from the ad model: $", round(profit_ad_model - profit_organic_model), "\n")
+```
+#Targeting with the ad-trained model earns $78,173 vs. $51,715 with the organic model: +$26,457 (+51%).
+
+
+
+```{r}
+#Q4. Compare the variable importance plot of the “organic” model and the “ad” model
+#and explain why the performance of the models differs.
+
+varimpplot(model_log.0, target = "converted", data = cg_organic_train)
+varimpplot(model_log.1, target = "converted",
+           data = cg_ad_random %>% mutate(converted = factor(converted)))
+```
+#Organic model: driven by in-game achievement (space hero badges, game level, ignored friend requests).
+#Ad model: driven by ad engagement (NumAdsClicked), then number of friends.
+#Once ads are shown, how a player responds to ads matters more than past in-game activity, so a model
+#trained on organic behavior ranks ad-exposed players poorly.
+
+
+
+
+
+
+
+
+
+#Part 5: Better Models, Better Predictions
+#--------------------------------------------
+#Q1. Train a random forest on the sample of customers who were exposed to the
+#ad campaign. (If you time, you can also try a neural network!).
+#Hints:- To train a random forest we use the ranger package (please install it first
+#and then load it in your R notebook). 
+
+```{r}
+library(ranger)
+set.seed(1234)
+
+cg_ad_random_rf <- cg_ad_random %>% mutate(converted = factor(converted))
+
+rf_ad <- ranger(converted ~ ., data = cg_ad_random_rf,
+                probability = TRUE, num.trees = 500,
+                mtry = 4, min.node.size = 50, importance = "impurity")
+
+cg_ad_scoring <- cg_ad_scoring %>%
+  mutate(pred_rf_ad = predict(rf_ad, data = cg_ad_scoring)$predictions[, 2])
+```
+
+#Q2. Compare the performance of the random forest “ad” model and the logistic
+#regression “ad” model from Part 4 on the “cg_ad_scoring” sample. Use
+#gains curves and AUC to make the comparison. What do you find?
+
+```{r}
+gainsplot(cg_ad_scoring$pred_model_log.1,
+          cg_ad_scoring$pred_rf_ad,
+          label.var = cg_ad_scoring$converted)
+```
+#The random forest beats the logistic regression: AUC 0.785 vs. 0.703.
+#It captures non-linear effects and interactions that a logistic model misses.
+
+#Q3. Calculate the profit improvement of using the random forest “ad” model and
+#the logistic regression “ad” model to target the best 30,000 customers in the
+#“cg_ad_scoring” sample.
+
+```{r}
+profit_rf_ad <- profit_top30k(cg_ad_scoring$pred_rf_ad)
+
+data.frame(model = c("Organic model (logistic)", "Ad model (logistic)", "Ad model (random forest)"),
+           profit = round(c(profit_organic_model, profit_ad_model, profit_rf_ad)))
+cat("Profit improvement, RF vs. ad logistic: $", round(profit_rf_ad - profit_ad_model), "\n")
+cat("Profit improvement, RF vs. organic logistic: $", round(profit_rf_ad - profit_organic_model), "\n")
+```
+#Random forest profit is $96,446: +$18,273 vs. the ad logistic model and +$44,730 vs. the organic model.
+
+

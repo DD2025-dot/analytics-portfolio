@@ -1,10 +1,11 @@
 ---
-title: "Creative Gaming"
-author: 
-   - "Deepa Das "      
+title: "Creative Gaming: Uplift Modeling to Optimize Ad Targeting"
+author: "Deepa Das"
 output:
-  pdf_document: default
-  html_notebook: default
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
 ---
 
 # Preliminaries
@@ -46,7 +47,7 @@ library(kelloggmktg482)
 ### Read in the data:
 ```{r}
 
-load("creative_gaming.Rdata") 
+load("../data/creative_gaming.Rdata") 
 
 set.seed(3456)
 str(cg_ad_treatment)
@@ -84,7 +85,6 @@ a) Create “Group 2” by sampling from cg_ad_treatment.
 You can use this syntax:
 cg_ad_random <- cg_ad_treatment[sample_random_30000,]
 
-Type your answer text here, intervowen with blocks of R code
 
 ```{r}
 cg_ad_random <- cg_ad_treatment[sample_random_30000,]

@@ -1,6 +1,6 @@
 .Rhistory
 .RData
 .Rproj.user/
-*.Rdata
-*.rds
+*.knit.md
+*_files/
 .DS_Store

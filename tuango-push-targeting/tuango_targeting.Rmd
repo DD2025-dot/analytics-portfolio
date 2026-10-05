@@ -1,0 +1,399 @@
+---
+title: "Tuango: Targeting Customers for Mobile App Push Messages"
+author: "Deepa Das"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+# Preliminaries
+
+### Determine notebook defaults:
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE,      # Print all the code in all the chunks
+                      warning=FALSE,  # Don't print warning statements
+                      message=FALSE,  # Don't print other R output messages
+                      comment=NA)     # Helps produce prettier output
+```
+
+### Load packages:
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+library(gmodels)
+library(modelr)
+library(janitor)
+library(haven)
+library(readxl)
+library(knitr)
+library(psych)
+library(statar)
+library(tidyverse)
+library(vip) 
+library(pdp) 
+library(dplyr) 
+library(nnet)
+library(kelloggmktg482)
+```
+
+### Read in the data:
+```{r}
+# use load("../data/filename.Rdata") for .Rdata files
+load("../data/tuango.Rdata")
+
+# converting factor variables
+tuango<-tuango%>%
+  mutate(music=factor(music),
+         sex=factor(sex),
+         messages=factor(messages),buyer=factor(buyer),training=factor(training))
+
+str(tuango)
+
+
+
+```
+
+# Assignment answers
+
+## Part I: Build Targeting Models 
+
+## 1. Estimate a logistic regression model using “buyer” as the dependent variable using all relevant predictor variables, namely age, sex, messages, recency, frequency, monetary, and music.
+
+
+```{r}
+log_model <- glm(buyer ~ age + sex + messages + recency + frequency + monetary + music,
+                 data = tuango,
+                 family = "binomial")
+summary(log_model)
+
+```
+
+## 2. Use summary(...) to examine the coefficient estimates, varimpplot(...) to assess variable importance, and pardepplot(...) the effect of each predictor. What variables seem to be practically important? Describe their effects
+
+
+
+```{r}
+# summary of logistic regression model is displayed
+summary(log_model)
+confint(log_model,level=0.95)
+
+
+# variable importance plot
+varimpplot(log_model, target = "buyer",data=tuango)
+
+#partial dependence plot for variables age, sex, messages, recency, frequency, monetary, and music.
+buyer.overall<-mean(tuango$buyer==1)
+pardepplot(log_model, pred.var = "age", data = tuango,hline=buyer.overall)
+pardepplot(log_model, pred.var = "sex", data = tuango,hline=buyer.overall)
+pardepplot(log_model, pred.var = "messages", data = tuango,hline=buyer.overall)
+pardepplot(log_model, pred.var = "recency", data = tuango,hline=buyer.overall)
+pardepplot(log_model, pred.var = "frequency", data = tuango,hline=buyer.overall)
+pardepplot(log_model, pred.var = "monetary", data = tuango,hline=buyer.overall)
+pardepplot(log_model, pred.var = "music", data = tuango,hline=buyer.overall)
+
+# Most influential predictors: messagesOn, music, frequency, and monetary.These 
+# are large, positive, and highly significant.
+
+
+#The message variable has the highest importance of approx.7%.
+#The rest of the variables, age, music, and monetary, have importance of
+# approx.2.5%. Frequency and sex have low importance of <2%. Recency has the least
+# importance of approx. 0.25%. Having messages on
+# or blocked in the app has a stronger impact on the purchase choices made by the user
+
+#Every variable is statistically significant (p < 0.001), which means their effects 
+#are very unlikely to be due to chance.
+
+#The partial plot shows that having messages on  a +7.5% probability
+#of purchase keeping all other variables constant
+#The partial plot shows significant deviation from 0 to 2,500 RMB. The
+#probability almost 1 for people  spending above 2,500RMB
+
+#The probability of purchase is much higher at younger age groups and
+#decreases to above 80 years of age.
+#The probability is almost 11% higher for females compared to males
+
+#The probability increases to ~23% from 10% as the frequency of deals increases
+#to 11
+
+#The probability increases by 5% fpr the consumer who made a purchase music
+
+##The probability drops by approx. 5% as number of days since last purchase is
+#above 400
+
+
+
+
+
+
+
+```
+
+## 3.Add the predicted values from the logistic regression to the “tuango” dataframe. Compare the average of the predicted values to the overall response rate (i.e., percentage of buyers). What do you notice? Why is that?
+```{r}
+library(dplyr)
+
+# Step 1: Add predicted probabilities to the dataset 
+tuango <- tuango %>%
+  mutate(predicted_prob = predict(log_model, type = "response"))
+
+mean_predicted<-mean(tuango$predicted_prob)
+tuango$buyer <- as.numeric(as.character(tuango$buyer))
+mean_actual<- mean (tuango$buyer)
+
+print(mean_predicted)
+print(mean_actual)
+
+#The average of the predicted probabilities (approx.11.95%) is equal to the actual response 
+#rate among customers in the test sample.This is expected and desirable.It means the 
+#logistic regression model is well-calibrated on average.Logistic regression trained 
+#using maximum likelihood ensures that predicted probabilities are unbiased in aggregate,
+#matching the overall proportion of buyers
+
+```
+
+## 4. Assign each customer to a decile based on his or her predicted probability of purchase. Assign those with the highest predicted probability to decile 1 and those with the lowest predicted probability to decile 10. Generate a table with ten rows and four columns with columns being the decile number; the number of customers in that decile, the number of buyers in that decile, and the response rate in that decile.
+```{r}
+# Step 1: Assign decile (1 = highest predicted probability, 10 = lowest)
+tuango <- tuango %>%
+  mutate(decile = ntile(-predicted_prob, 10))  
+# the minus sign to rank descending
+
+# Step 2: Summarize by decile
+decile_summary <- tuango %>%
+  group_by(decile) %>%
+  summarise(
+    customers = n(),
+    buyers = sum(buyer == 1),
+    response_rate = mean(buyer == 1)
+  )
+
+# Step 3: Viewing result
+print(decile_summary)
+
+#The table generated displays how the actual response rate is the highest
+#for decile 1 and how it decreases with decreasing predicted probability
+
+```
+
+## 5.Use the table created in the prior question to make a barchart that plots the response rate in each decile defined. Comment on your findings.
+```{r}
+library(ggplot2)
+
+ggplot(decile_summary, aes(x = factor(decile), y = response_rate)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Response Rate by Predicted Probability Decile",
+    x = "Decile (1 = Highest Predicted Probability)",
+    y = "Response Rate"
+  ) +
+  theme_minimal()
+
+#The bar plot shows how the response rate drops from 28% in decile 1 to 2.5% in
+#decile 10.
+
+```
+
+## 6. Estimate a linear regression model using “ordersize” as the dependent variable using all relevant predictor variables, namely age, sex, messages, recency, frequency, monetary, and music. Estimate this regression using only those customers who purchased the Karaoke deal.
+## Hint: Use filter(buyer==1) in the dplyr package to create a dataframe limited to only those customers who purchased the Karaoke deal and use this dataframe as an input to the linear regression. Consider: why are we limiting this analysis only to these customers?
+```{r}
+library(dplyr)
+
+buyers_only <- tuango %>% 
+  filter(buyer == 1)
+#linear regression to predict ordersize, only for customers who purchased the Karaoke 
+#deal (buyer == 1).
+
+# We filter (buyer == 1), because only those who actually made a purchase have a meaningful 
+# ordersize.For non-buyers, ordersize would likely be zero or missing, which would bias the regression.
+ordersize_model <- lm(ordersize ~ age + sex + messages + recency + frequency + monetary + music, 
+                      data = buyers_only)
+summary(ordersize_model)
+confint(ordersize_model)
+
+#The coefficients estimated using linear regression are not statistically
+#significant as p-value is greater than 0.05 for all.
+
+```
+
+## 7. Use summary(...) to examine the coefficient estimates, varimpplot(...) to assess variable importance, and pardepplot(...) the effect of each predictor. What variables seem to be practically important? Describe their effects. What does this suggest about our ability to predict the order size of those customers who responded to the deal?
+```{r}
+summary(ordersize_model)
+
+varimpplot(ordersize_model, target = "ordersize", data = buyers_only)
+
+pardepplot(ordersize_model, pred.var = "messages", data = buyers_only)
+pardepplot(ordersize_model, pred.var = "monetary", data = buyers_only)
+pardepplot(ordersize_model, pred.var = "age", data = buyers_only)
+pardepplot(ordersize_model, pred.var = "sex", data = buyers_only)
+pardepplot(ordersize_model, pred.var = "frequency", data = buyers_only)
+pardepplot(ordersize_model, pred.var = "music", data = buyers_only)
+pardepplot(ordersize_model, pred.var = "recency", data = buyers_only)
+
+#The variable importance of all the variables is close to 0 (less than 0.29%). 
+#Notably,age has a negative variable importance figures, signifying 
+#that eliminating the variables may  improve the accuracy of the analysis
+
+#The partial plot shows that having messages on signifies only a difference
+#of 0.06 in the ordersize
+
+#The partial plot shows that "variable "monetary"  has a very small slope
+#(0.00008)
+
+#For the remaining variables also the slope is insignificant , suggesting 
+#significantly small dependence.
+
+#Thus, it can be concluded that these variables cannot reliably predict the
+#order size. We cannot predict the order size of the users who respond to the deal
+#from this model
+
+
+```
+
+## Part II: Profitability Analysis
+## 1. What is the breakeven response rate?
+```{r}
+#Price per session = 49 RMB
+# Marginal cost to offer the deal = 11 RMB
+# Tuango fee = 50% of sales revenue, so revenue per deal = 49 × 50% = 24.5 RMB
+
+# Parameters
+price_per_session <- 49
+marginal_cost <- 11
+tuango_fee_percent <- 0.5
+
+# Revenue Tuango receives per deal
+revenue_per_deal <- price_per_session * tuango_fee_percent
+
+# Breakeven response rate = cost / revenue per deal
+breakeven_rate <- marginal_cost / revenue_per_deal
+breakeven_rate
+
+#This is the minimum predicted probability of purchase at which sending the offer 
+#becomes profitable.
+
+# Breakeven response rate = 11 / 24.5 = 0.44898 =44.9%
+
+```
+## 2.What is the projected profit in RMB if you offer the deal to all 397,252 remaining customers?
+```{r}
+# Known values
+total_remaining_customers <- 397252
+tuango$buyer <- as.numeric(as.character(tuango$buyer))
+response_rate <- mean(tuango$buyer)  # 0.1195
+profit_per_sale <- 49 * 0.5 - 11    # 13.5 RMB
+
+# Calculate expected number of buyers
+expected_buyers <- total_remaining_customers * response_rate
+
+# Projected profit
+projected_profit <- expected_buyers * 24.5-397252*11
+
+# Output
+print(expected_buyers)
+print(projected_profit)
+
+# The expected number of buyers is 47481
+#The projected profit in RMB is -3206488
+```
+## 3.What is the projected profit if you offer the deal to only to those of the 397,252 remaining customers that targeting model deems profitable?
+```{r}
+
+# Step 1: Flag customers whose predicted probability >= breakeven
+tuango_target <- tuango %>%
+  mutate(target = ifelse(predicted_prob >= breakeven_rate, 1, 0))
+
+# Step 2: Filter those who are targeted
+target_customers <- tuango_target %>%
+  filter(target == 1)
+
+# Step 3: Summary stats
+target_summary <- target_customers %>%
+  summarise(
+    fraction_targeted = nrow(target_customers) / nrow(tuango),
+    avg_pred_prob = mean(target_customers$predicted_prob)
+  )
+
+# Step 4: Scale to remaining customers
+total_remaining <- 397252
+num_mailed <- total_remaining * target_summary$fraction_targeted
+expected_buyers <- num_mailed * target_summary$avg_pred_prob
+
+# Step 5: Profit computation
+
+
+projected_profit <- expected_buyers * 24.5-num_mailed*11
+
+# Step 6: Output
+print(target_summary)
+print(projected_profit)
+
+#The targeting model is effective at finding high-conversion users.
+
+#If targeting only 0.41% (deemed profitable by the model), 63.9% of mailed customers 
+#buy the deal. This is a high conversion rate.
+#The total profit is 7169.56 RMB. The targeting model successfully identifies a small subset (0.41%) of customers whose response rate is 63.95%, above the breakeven of 44.9%.While the reach is narrow, the high conversion rate makes this strategy profitable, yielding 7169.56 RMB in projected profit when scaled to the remaining 397,252 customers.This demonstrates the value of precision targeting.
+```
+
+## Part III: Build Targeting Models Redux 
+## 1. Estimate a neural network model using “buyer” as the dependent variable using the same predictor variables as the logistic regression estimated in Part I. Set the size tuning parameter to 5 and the decay tuning parameter to 0.1.
+```{r}
+library(nnet)
+nn<-nnet(buyer~age+sex+messages+recency+frequency+monetary+music,data=tuango,size= 5,decay=0.1,maxit=1000)
+```
+
+
+## 2.Add the predicted values from the neural network to the “tuango” dataframe and repeat the profitability analysis in Part II but using these predicted values rather than those from the logistic regression. Comment on why your profits are similar to or different from those found in Part II.
+```{r}
+#Case 1- Using average probability derived from test data
+library(dplyr)
+tuango<-tuango%>%mutate(pred_prob_nn1=predict(nn,type="raw")[,1])
+avg_prob_nn1<-mean(tuango$pred_prob_nn1)
+avg_prob_nn1
+
+#Projected Profitability calculation from nn
+profit_nn1<-397252*(avg_prob_nn1*24.5-11)
+print(profit_nn1)
+
+#Case 2-Scenario when the offer is sent to profitable customers only
+
+# Step 1: Flag customers above breakeven response rate using neural network predictions
+tuango <- tuango %>%
+  mutate(target_nn2 = ifelse(pred_prob_nn1 >= breakeven_rate, 1, 0))
+
+# Step 2: Filter those who are targeted
+target_nn2_customers <- tuango %>%
+  filter(target_nn2 == 1)
+
+# Step 3: Calculate fraction targeted and average predicted prob
+target_nn2_summary <- target_nn2_customers %>%
+  summarise(
+    fraction_targeted2 = n() / nrow(tuango),
+    avg_pred_prob_nn2 = mean(target_nn2_customers$pred_prob_nn1)
+  )
+
+# Step 4: Compute scale-up to full customer base
+total_remaining <- 397252
+num_mailed_nn2 <- total_remaining * target_nn2_summary$fraction_targeted2
+expected_buyers_nn2 <- num_mailed_nn2 * target_nn2_summary$avg_pred_prob_nn2
+
+# Step 5: Profit per sale
+revenue_per_deal <- 49 * 0.5   # 24.5 RMB
+marginal_cost <- 11
+
+# Step 6: Final profit calculation
+projected_profit_nn2 <- expected_buyers_nn2 * 24.5-num_mailed_nn2*11
+
+# Step 7: Output
+print(target_nn2_summary)
+print(projected_profit_nn2)
+
+#The results obtained here are similar to results from Part II. Case 1 results
+#in a net loss of approx 3.207 million RMB.
+#Case 2 results in a net profit of 11193 RMB. 
+#Case 1 applies the mean response rate of 11.9%
+#Case 2 estimates that approx. 0.9% of the remaining population 
+#set will have an #estimated purchasing probability higher than 
+#the breakeven response rate.
+
+```

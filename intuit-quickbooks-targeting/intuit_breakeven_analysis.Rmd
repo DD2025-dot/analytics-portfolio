@@ -1,0 +1,281 @@
+---
+title: "Intuit QuickBooks Online: Break-Even Analysis"
+author: "Deepa Das"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+# Preliminaries
+
+### Determine notebook defaults:
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE,      # Print all the code in all the chunks
+                      warning=FALSE,  # Don't print warning statements
+                      message=FALSE,  # Don't print other R output messages
+                      comment=NA)     # Helps produce prettier output
+```
+
+### Load packages:
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+library(gmodels)
+library(modelr)
+library(janitor)
+library(haven)
+library(readxl)
+library(knitr)
+library(psych)
+library(statar)
+library(tidyverse)
+library(nnet)
+library(ROCR)
+library(kelloggmktg482)
+```
+
+### Read in the data:
+```{r}
+# use load("../data/filename.Rdata") for .Rdata files
+load("../data/intuit_online.Rdata")
+str(intuit)
+str(intuit.wave2)
+set.seed(4444)
+```
+
+# Assignment answers
+
+## Question 1
+
+
+```{r}
+#converting intuit into factors
+intuit <- intuit %>%
+  mutate(
+    id = factor(id),
+    state = factor(state),
+    zip = factor(zip),
+    version2013 = factor(version2013),
+    upgraded = factor(upgraded),
+    payroll = factor(payroll),
+    bizflag = factor(bizflag),
+    sex = factor(sex),
+    res = factor(res),
+    training = factor(training)
+  )
+
+intuit.wave2 <- intuit.wave2 %>%
+  mutate(
+    id = factor(id),
+    state = factor(state),
+    zip = factor(zip),
+    version2013 = factor(version2013),
+    upgraded = factor(upgraded),
+    payroll = factor(payroll),
+    bizflag = factor(bizflag),
+    sex = factor(sex)
+    
+  )
+
+```
+
+## Question 2
+
+
+
+```{r}
+# Split into train/test based on 'training' variable
+intuit.train <- intuit %>% filter(training == 1)
+intuit.test <- intuit %>% filter(training == 0)
+```
+
+
+```{r}
+# Build Logistic Regression Model
+model_lr <- glm(res ~ version2013 + upgraded + payroll + bizflag + sex + last + numords + dollars + sincepurch + speeddown + speedup + income + medhvalue+state,
+                family = "binomial", data = intuit.train)
+print(model_lr)
+
+# Build Neural Network Model
+model_nn <-nnet(res ~ version2013 + upgraded + payroll + bizflag + sex + last + numords + dollars + sincepurch + speeddown + speedup + income + medhvalue+state,size=5,decay=0.1,maxit=1000,data=intuit.train)
+print(model_nn)
+
+
+
+#Modelling logistic regression enhanced
+model_lr_new <- glm(res ~ version2013 + upgraded + payroll + bizflag + sex +income+medhvalue+state+
+                      
+                    dollars+numords+ sincepurch+last +speeddown+speedup+ I(income^2) +
+                      I(medhvalue^2) + I(sincepurch^2) +
+                      
+                      I(speeddown^2) +
+                      I(speedup^2) +
+                      I(last^2) +I(log(income))+
+                     I(log(numords))+
+                      I(log(dollars))+
+                      payroll:upgraded +
+                      bizflag:income+
+        payroll:bizflag +
+        sincepurch:upgraded,
+                      
+                      family = "binomial", data = intuit.train)
+print(model_lr_new)
+
+
+```
+```{r}
+# Make Predictions for training sample and test sample
+
+intuit.train <- intuit.train %>%
+  mutate(pred_lr = predict(model_lr, type = "response"),
+         pred_nn = predict(model_nn, type = "raw")[,1],
+         pred_lr_new = predict(model_lr_new, type = "response"))
+
+intuit.test <- intuit.test %>%
+  mutate(pred_lr = predict(model_lr, newdata = intuit.test, type = "response"),
+         pred_nn = predict(model_nn, newdata = intuit.test, type = "raw")[,1],
+         pred_lr_new = predict(model_lr_new,newdata=intuit.test,type = "response"))
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+#Model performance comparison for training data set
+# Gains Plot: Training Sample
+gainsplot(intuit.train$pred_lr, intuit.train$pred_nn, intuit.train$pred_lr_new,label.var = intuit.train$res)
+
+
+
+```
+
+
+```{r}
+# Model performance comparison for test data set
+# Gains Plot: Test Sample
+
+gainsplot(intuit.test$pred_lr, intuit.test$pred_nn,intuit.test$pred_lr_new, label.var = intuit.test$res)
+```
+
+
+```{r}
+# VARIABLE IMPORTANCE PLOTS
+
+# For LOGISTIC REGRESSION training set
+
+varimpplot(model_lr, target = "res", data = intuit.train)
+
+
+```
+```{r}
+# For logistic regression test set
+
+varimpplot(model_lr, target = "res", data = intuit.test)
+```
+```{r}
+# For NEURAL NETWORK training set
+varimpplot(model_nn, target = "res", data = intuit.train)
+
+```
+
+
+```{r}
+# For NEURAL NETWORK test set
+varimpplot(model_nn, target = "res", data = intuit.test)
+
+```
+```{r}
+# Scoring intuit.wave2 using model_lr_new
+
+intuit.wave2$best.score_log <- predict(model_lr_new, newdata = intuit.wave2, type = "response")
+
+
+
+
+
+
+```
+
+
+```{r}
+# Scoring intuit.wave2 using model_nn
+
+intuit.wave2$best.score_nn <- predict(model_nn, newdata = intuit.wave2, type = "raw")[,1]
+
+```
+
+
+```{r}
+# Expected Profit Calculation for logistic regression based model
+library(dplyr)
+profit_per_conversion <- 180     # Lifetime net profit
+mail_cost <- 1.60                # Mailing cost
+opportunity_cost <- 5.60         # Benchmark to beat
+
+sales <- 180
+cost <- 1.60
+breakeven <- cost/sales 
+print(breakeven)
+
+# Calculate expected profit for each customer
+intuit.wave2_logprofit<- intuit.wave2 %>% 
+  mutate(
+    expected_profit_log = profit_per_conversion * best.score_log - mail_cost,
+    target.wave2_log = ifelse(best.score_log >= breakeven, 1, 0)
+  )
+# Summarize: Sum expected profit where target == 1
+sum_expected_profit <- intuit.wave2_logprofit %>%
+  filter(target.wave2_log == 1) %>%
+  summarise(total_profit = sum(expected_profit_log)) 
+
+print(sum_expected_profit)
+
+# (Optional) If you also want to print how many customers have target ==1
+num_customers_target1 <- sum(intuit.wave2_logprofit$target.wave2_log == 1)
+print(num_customers_target1)
+
+#Logistic model, break-even rule (score >= 0.89%, no $5.60 opportunity cost): 15,208 customers, expected profit $146,194
+#That is $9.61 per targeted customer. More customers are mailed, but at a lower profit per customer
+
+```
+
+```{r}
+# Expected Profit Calculation for Neural Network based model
+library(dplyr)
+profit_per_conversion <- 180     # Lifetime net profit
+mail_cost <- 1.60                # Mailing cost
+opportunity_cost <- 5.60         # Benchmark to beat
+sales <- 180
+cost <- 1.60
+breakeven <- cost/sales 
+print(breakeven)
+
+# Calculate expected profit for each customer
+intuit.wave2_nnprofit <- intuit.wave2 %>% 
+  mutate(
+    expected_profit_nn = profit_per_conversion * best.score_nn - mail_cost,
+    target.wave2_nn = ifelse(best.score_nn >= breakeven, 1, 0)
+  )
+# Summarize: Sum expected profit where target == 1
+sum_expected_profit_nn <- intuit.wave2_nnprofit %>%
+  filter(target.wave2_nn == 1) %>%
+  summarise(total_profit_nn = sum(expected_profit_nn)) 
+
+print(sum_expected_profit_nn)
+
+# (Optional) If you also want to print how many customers have target ==1
+num_customers_targetnn <- sum(intuit.wave2_nnprofit$target.wave2_nn == 1)
+print(num_customers_targetnn)
+#Neural network, break-even rule: 13,421 customers, expected profit $148,788
+#That is $11.09 per targeted customer
+
+```
+
+
+
+```
+

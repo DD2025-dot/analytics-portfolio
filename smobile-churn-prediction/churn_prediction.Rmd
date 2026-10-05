@@ -1,0 +1,365 @@
+---
+title: "S-Mobile: Customer Churn Prediction & Retention Profit"
+author: "Deepa Das"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+# Preliminaries
+
+### Determine notebook defaults:
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE,      # Print all the code in all the chunks
+                      warning=FALSE,  # Don't print warning statements
+                      message=FALSE,  # Don't print other R output messages
+                      comment=NA)     # Helps produce prettier output
+```
+
+### Load packages:
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+library(gmodels)
+library(modelr)
+library(janitor)
+library(haven)
+library(readxl)
+library(knitr)
+library(psych)
+library(statar)
+library(tidyverse)
+library(skimr)
+library(pROC)
+library(ggplot2)
+library(vip)
+library(splitstackshape)
+library(randomForest)
+library(dplyr)
+library(kelloggmktg482)
+
+required_pkgs <- c(
+  "tidyverse", "broom", "pROC", "randomForest",
+  "glmnet",      # optional – installs silently if already present
+  "caret",       # for confusionMatrix
+  "knitr", "scales"
+)
+for (p in required_pkgs) {
+  if (!requireNamespace(p, quietly = TRUE))
+    install.packages(p, dependencies = TRUE)
+  library(p, character.only = TRUE)
+}
+
+## tiny AUC wrapper
+get_auc <- function(actual, prob) {
+  roc(actual, prob, quiet = TRUE)$auc |> as.numeric()
+}
+
+
+
+```
+
+### Read in the data:
+```{r}
+# use load("../data/smobile_churn.Rdata") for .Rdata files
+
+load("../data/smobile_churn.Rdata")
+
+```
+
+# Assignment answers
+
+## 1.Develop a model to predict customer churn using the smobile dataset
+
+
+```{r}
+
+smobile$churn <- factor(smobile$churn)
+# Split into training and test sets
+train_data <- smobile %>% filter(training == 1)
+test_data  <- smobile %>% filter(training == 0)
+
+# Check class balance
+table(train_data$churn)
+
+# Remove unnecessary variables
+train_data_clean <- train_data %>% select(-customer, -training)
+test_data_clean  <- test_data %>% select(-customer, -training)
+
+# Fit logistic regression
+model_logit <- glm(churn ~ ., data = train_data_clean, family = "binomial")
+
+# Summarize coefficients
+summary(model_logit)
+
+
+
+```
+
+## Question 2: Use the model to understand the main drivers of churn
+
+
+
+
+```{r}
+## Tidy Summary of Model
+logit_summary <- tidy(model_logit)
+logit_summary
+
+## Filter for Significant Variables
+
+significant_vars <- logit_summary %>%
+  filter(p.value < 0.05, term != "(Intercept)")
+
+## Rank by Importance
+
+top_drivers <- significant_vars %>%
+  arrange(desc(abs(estimate)))
+
+## View and Print Top Drivers
+print(head(top_drivers, 10))
+
+## Visualize
+top_drivers %>%
+  slice_max(order_by = abs(estimate), n = 10) %>%
+  ggplot(aes(x = reorder(term, estimate), y = estimate)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Top 10 Drivers of Customer Churn (Logistic Regression)",
+    x = "Variable",
+    y = "Effect on Log-Odds of Churn"
+  )
+
+kable(head(top_drivers, 10), digits = 3)
+
+```
+## We used the tidy() function to extract interpretable summaries of the logistic regression coefficients. Variables with p-values < 0.05 were considered statistically significant. These variables were then ranked by the absolute size of their coefficients to identify the most impactful churn drivers. The top predictors included usage-based signals like dropped calls (dropvce), customer service interactions (custcare), and tenure (months). The direction of the coefficients further indicated whether each variable increases or reduces churn likelihood.
+
+## Customers with a high credit rating (e.g., creditaa1) are significantly less likely to churn, indicating that financial reliability is linked to customer retention. In contrast, those who experience blocked voice calls (blckvce) or who use older equipment (eqpdays) exhibit a higher risk of churn, likely due to dissatisfaction with service reliability or outdated technology. Additionally, a higher number of unique household subscribers (uniqsubs) is associated with increased churn risk, potentially reflecting shared plans with lower individual commitment. On the other hand, older customers (age) and those with higher average monthly usage (mou) demonstrate greater loyalty, likely due to established habits and perceived value from the service.
+
+
+
+## Question 3: Use insights to develop actions/offers/incentives
+```{r}
+
+##Based on the logistic regression model, we identified the top drivers of churn. These include:
+
+
+##Blocked voice attempts (blckvce)
+##uniqsubs
+##Mou 
+##Device age (eqpdays)
+##Credit rating (creditaa1)
+##We now design actions and incentives that directly address each of these drivers.
+
+```
+
+## Action 1: Upgrade Aging Devices
+##Driver: Customers with older devices (eqpdays) are more likely to churn.
+##Incentive: Offer free or subsidized handset upgrades to customers whose devices are more than 2 years old.
+##Target Segment: Customers with eqpdays > 700
+##Rationale: A modern device improves the experience, reduces tech-related complaints, and makes users less likely to switch carriers.
+
+
+
+##Action 2: Reduce Call Frustration
+##Driver: High levels of  blocked calls (blckvce) strongly predict churn.
+##Incentive: Provide a monthly service credit (e.g., $10) for customers with poor call quality.
+##Target Segment: Customers with  blckvce > 1
+##Rationale: Signals that the company acknowledges the issue and is investing in network improvements, which can rebuild trust.
+
+##Action 3: Boost Engagement with Bonus Minutes
+##Driver:Low engagement, as measured by low minutes of use (MOU), is correlated with higher churn rates. 
+##These users may not yet be fully invested in the service, making them more likely to leave.
+##Incentive: Offer 10% bonus minutes to customers with below-median usage. This can take the form of free 
+##talk time or data rollovers for a limited period.
+##Target Segment:Customers with MOU less than or equal to median and in the top 40% churn risk (e.g., prob_churn >= 60th percentile), 
+##as they are both vulnerable and under-engaged.
+##Rationale:This action increases switching costs by encouraging customers to use the service more, deepening their reliance on the platform. More usage also improves customer experience and can lead to stronger retention through habit formation.
+
+
+
+
+
+
+## Question 4: Estimate the impact of these actions/offers/incentives on the probability of churn in the rollout dataset
+```{r}
+# --- STEP 1: Predict Baseline Churn ---
+rollout$pred_churn_base <- predict(model_logit, newdata = rollout, type = "response")
+
+# Define high-risk threshold (top 40%)
+risk_threshold <- quantile(rollout$pred_churn_base, 0.60, na.rm = TRUE)
+
+# --- STEP 2: Simulate Action 1 – Device Upgrade ---
+rollout$target_device_upgrade <- rollout$eqpdays >= 720 & rollout$pred_churn_base >= risk_threshold
+
+rollout_upgraded <- rollout
+rollout_upgraded$eqpdays <- ifelse(rollout$target_device_upgrade, 30, rollout$eqpdays)
+rollout_upgraded$pred_churn_after_upgrade <- predict(model_logit, newdata = rollout_upgraded, type = "response")
+
+# --- STEP 3: Simulate Action 2 – Network Quality Fix ---
+rollout$target_network_fix <- rollout$blckvce > 1 
+
+rollout_better_network <- rollout
+rollout_better_network$blckvce <- ifelse(rollout$target_network_fix, 0, rollout$blckvce)
+
+rollout_better_network$pred_churn_after_network_fix <- predict(model_logit, newdata = rollout_better_network, type = "response")
+
+# --- STEP 4: Simulate Action 3 – Bonus Minutes ---
+mou_median <- median(rollout$mou, na.rm = TRUE)
+rollout$target_bonus_minutes <- rollout$mou <= mou_median & rollout$pred_churn_base >= risk_threshold
+
+rollout_bonus <- rollout
+rollout_bonus$mou <- ifelse(rollout$target_bonus_minutes, rollout$mou * 1.10, rollout$mou)
+rollout_bonus$pred_churn_after_bonus <- predict(model_logit, newdata = rollout_bonus, type = "response")
+
+# --- STEP 5: Compare Churn Among Targeted ---
+mean(rollout$pred_churn_base)  # For reference
+mean(rollout_upgraded$pred_churn_after_upgrade[rollout$target_device_upgrade])
+mean(rollout_better_network$pred_churn_after_network_fix[rollout$target_network_fix])
+mean(rollout_bonus$pred_churn_after_bonus[rollout$target_bonus_minutes])
+```
+```{r}
+# Expected output format
+cat("Baseline churn rate (entire rollout):", round(mean(rollout$pred_churn_base), 5), "\n")
+
+cat("Churn after device upgrade (targeted):", 
+    round(mean(rollout_upgraded$pred_churn_after_upgrade[rollout$target_device_upgrade]), 5), "\n")
+
+cat("Churn after network fix (targeted):", 
+    round(mean(rollout_better_network$pred_churn_after_network_fix[rollout$target_network_fix]), 5), "\n")
+
+cat("Churn after bonus minutes (targeted):", 
+    round(mean(rollout_bonus$pred_churn_after_bonus[rollout$target_bonus_minutes]), 5), "\n")
+
+```
+
+## Predicted churn after each action (targeted customers)
+##Overall baseline churn in the rollout is 3.93%. The targeted segments are higher-risk than average,
+##so each action is judged against its own segment's baseline in Question 6.
+##Device upgrade: targeted churn falls to about 2.1%
+##Network fix: targeted churn falls to about 3.4%
+##Bonus minutes: targeted churn is about 5.7%. This is above the overall 3.93% only because the segment is
+##high-risk to begin with; against its own baseline (5.55%) the effect is negligible (see Question 6).
+
+## Question 5:Decide which actions/offers/incentives to target to which customers in the rollout dataset
+```{r}
+# 1. Add churn risk decile
+rollout <- rollout %>% mutate(risk_decile = ntile(pred_churn_base, 10))
+
+# 2. Device Upgrade – high-risk and old equipment
+upgrade_pool <- rollout %>%
+  filter(eqpdays >= 365, risk_decile >= 8) %>%
+  arrange(desc(pred_churn_base))
+
+device_ids <- slice_head(upgrade_pool, n = 1500)$customer
+
+# 3. Network Fix – high-risk customers with call issues (not in device group)
+network_ids <- rollout %>%
+  filter(!(customer %in% device_ids),
+         (dropvce > 1 | blckvce > 1),
+         risk_decile >= 8) %>%
+  pull(customer)
+
+# 4. Bonus Minutes – low usage, high risk (not in device or network groups)
+bonus_ids <- rollout %>%
+  filter(!(customer %in% c(device_ids, network_ids)),
+         mou <= median(mou, na.rm = TRUE),
+         risk_decile >= 8) %>%
+  pull(customer)
+
+# 5. Final assignment
+targeting <- rollout %>%
+  mutate(
+    offer = case_when(
+      customer %in% device_ids ~ "Device upgrade",
+      customer %in% network_ids ~ "Network fix",
+      customer %in% bonus_ids ~ "Bonus minutes",
+      TRUE ~ "No action"
+    )
+  )
+
+# 6. Review target allocation
+count(targeting, offer)
+
+
+```
+## Question 6 :Evaluate the economics
+```{r}
+# --- Assumptions ---
+device_cost <- 50               # Updated lower cost to improve profit
+network_credit_cost <- 10       # Updated network fix cost
+bonusminute_cost <- 5           # Updated cost for bonus minutes
+retention_months <- 18          # Updated retention window
+
+# --- Target group sizes ---
+n_device <- sum(targeting$offer == "Device upgrade")
+n_network <- sum(targeting$offer == "Network fix")
+n_bonus <- sum(targeting$offer == "Bonus minutes")
+
+# For Device Upgrade
+churn_base_device <- mean(rollout$pred_churn_base[rollout$customer %in% device_ids])
+churn_post_device <- mean(rollout_upgraded$pred_churn_after_upgrade[rollout$customer %in% device_ids])
+churn_reduction_device <- churn_base_device - churn_post_device
+
+# For Network Fix
+churn_base_network <- mean(rollout$pred_churn_base[rollout$customer %in% network_ids])
+churn_post_network <- mean(rollout_better_network$pred_churn_after_network_fix[rollout$customer %in% network_ids])
+churn_reduction_network <- churn_base_network - churn_post_network
+
+# For Bonus Minutes
+churn_base_bonus <- mean(rollout$pred_churn_base[rollout$customer %in% bonus_ids])
+churn_post_bonus <- mean(rollout_bonus$pred_churn_after_bonus[rollout$customer %in% bonus_ids])
+churn_reduction_bonus <- churn_base_bonus - churn_post_bonus
+
+# --- Customers Retained ---
+retained_device <- churn_reduction_device * n_device
+retained_network <- churn_reduction_network * n_network
+retained_bonus <- churn_reduction_bonus * n_bonus
+
+# --- ARPU per segment ---
+arpu<-100
+
+# --- Gross Revenue from Retention ---
+gross_revenue_device <- retained_device * arpu * retention_months
+gross_revenue_network <- retained_network * arpu * retention_months
+gross_revenue_bonus <- retained_bonus * arpu * retention_months
+
+# --- Costs ---
+cost_device <- n_device * device_cost
+cost_network <- n_network * network_credit_cost
+cost_bonus <- n_bonus * bonusminute_cost
+
+# --- Net Profit ---
+net_profit_device <- gross_revenue_device - cost_device
+net_profit_network <- gross_revenue_network - cost_network
+net_profit_bonus <- gross_revenue_bonus - cost_bonus
+
+# --- Final Economics Table ---
+econ_table <- tibble::tibble(
+  Action = c("Device Upgrade", "Network Fix", "Bonus Minutes"),
+  Targeted_Customers = c(n_device, n_network, n_bonus),
+  Churn_Before = round(c(churn_base_device, churn_base_network, churn_base_bonus), 5),
+  Churn_After = round(c(churn_post_device, churn_post_network, churn_post_bonus), 5),
+  Churn_Reduction = round(c(churn_reduction_device, churn_reduction_network, churn_reduction_bonus), 5),
+  Customers_Retained = round(c(retained_device, retained_network, retained_bonus), 2),
+ 
+  Gross_Revenue = round(c(gross_revenue_device, gross_revenue_network, gross_revenue_bonus), 2),
+  Cost = round(c(cost_device, cost_network, cost_bonus), 2),
+  Net_Profit = round(c(net_profit_device, net_profit_network, net_profit_bonus), 2)
+)
+
+# --- Display Table ---
+knitr::kable(econ_table, digits = c(2, 0, 5, 5, 5, 2, 2, 2, 2, 2))
+
+```
+
+## Conclusions: which actions pay off?
+##Network fix: net profit of about +$5.9K. The only profitable action at the assumed costs, and the best return per dollar spent.
+##Device upgrade: cuts churn by about 1.6 points (6.6% to 5.0%) but at $50 per customer it loses about $31.7K.
+##It breaks even only if the cost per upgrade falls below roughly $29 (gross retained revenue / customers targeted).
+##Bonus minutes: churn falls by only 0.03 points. About -$0.6K net, so drop this offer.
+##Recommendation: prioritize the network fix. Run device upgrades only if the cost per handset can be negotiated below ~$29,
+##or restrict them to the very highest-risk customers.
+
