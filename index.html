@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analytics & Strategy Portfolio | Deepa Das</title>
+<style>
+  :root { --bg:#fff; --fg:#1a1a1a; --muted:#5f6368; --line:#e3e5e8; --accent:#1a56db; --card:#f7f8fa; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14161a; --fg:#eceef1; --muted:#9aa0a6; --line:#2c3037; --accent:#7aa7ff; --card:#1c1f25; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:40px 16px 64px; }
+  h1 { font-size:28px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 28px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin:0 0 14px; }
+  .card h2 { font-size:18px; margin:0 0 6px; }
+  .card p { margin:0 0 10px; }
+  .result { font-weight:600; }
+  a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+  .links a { margin-right:16px; }
+  ul { padding-left:20px; margin:8px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Analytics &amp; Strategy Portfolio</h1>
+  <p class="sub">Deepa Das &middot; Operations Manager, Amazon (Kansas City) &middot; MBA '25 &middot; 10 years in program management</p>
+
+  <div class="card">
+    <h2>1. Creative Gaming: Uplift Model</h2>
+    <p>Which players does an ad actually <em>persuade</em>?</p>
+    <p class="result">Uplift targeting earned $55.7K vs $21.9K for propensity targeting.</p>
+    <div class="links"><a href="creative-gaming-uplift/uplift_model.html">Full report</a><a href="https://github.com/DD2025-dot/analytics-portfolio/tree/main/creative-gaming-uplift">Summary</a></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Creative Gaming: Propensity Model</h2>
+    <p>Can a model pick the best 30K players to show an ad?</p>
+    <p class="result">Random forest lifted profit to $96K, up from $13.7K for random ads.</p>
+    <div class="links"><a href="creative-gaming-propensity/propensity_model.html">Full report</a><a href="https://github.com/DD2025-dot/analytics-portfolio/tree/main/creative-gaming-propensity">Summary</a></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Intuit QuickBooks: Direct Mail Targeting</h2>
+    <p>Which 25K customers should get the cloud-upgrade offer?</p>
+    <p class="result">Neural net beat logistic (AUC 0.83 vs 0.76), about $131K expected profit.</p>
+    <div class="links"><a href="intuit-quickbooks-targeting/intuit_targeting.html">Full report</a><a href="https://github.com/DD2025-dot/analytics-portfolio/tree/main/intuit-quickbooks-targeting">Summary</a></div>
+  </div>
+
+  <div class="card">
+    <h2>4. S-Mobile: Churn &amp; Retention Offers</h2>
+    <p>Which retention offers actually pay off?</p>
+    <p class="result">Only the network fix is profitable; device upgrades lose money at $50 each.</p>
+    <div class="links"><a href="smobile-churn-prediction/churn_prediction.html">Full report</a><a href="https://github.com/DD2025-dot/analytics-portfolio/tree/main/smobile-churn-prediction">Summary</a></div>
+  </div>
+
+  <div class="card">
+    <h2>Skills shown</h2>
+    <ul>
+      <li>Customer analytics: targeting, churn, uplift, propensity</li>
+      <li>Modeling: logistic regression, random forests, neural networks</li>
+      <li>Evaluation: gains curves, AUC, Qini curves</li>
+      <li>Business framing: break-even rules, incremental profit</li>
+    </ul>
+    <p style="margin-top:12px"><a href="https://github.com/DD2025-dot/analytics-portfolio">View code on GitHub</a></p>
+  </div>
+</main>
+</body>
+</html>
